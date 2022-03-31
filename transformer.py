@@ -23,6 +23,17 @@ class PositionalEncoding(nn.Module):
         return x + self.pos_embedding
 
 
+class LearnablePositionalEncoding(nn.Module):
+    def __init__(self, n, d_model):
+        super().__init__()
+        self.positional_embedding = nn.Embedding(n, d_model)
+        positions = torch.arange(n)
+        self.register_buffer('positions', positions)
+
+    def forward(self, x):
+        return x + self.positional_embedding(self.positions)
+
+
 class TraDE(BaseModel):
     """
     Transformers for density estimation or stat-mech problems
@@ -37,8 +48,9 @@ class TraDE(BaseModel):
         self.n_heads = kwargs['n_heads']
         self.device = kwargs['device']
 
-        self.fc_in = nn.Linear(1, self.d_model)
-        self.positional_encoding = PositionalEncoding(self.n, self.d_model)
+        self.fc_in = nn.Embedding(2, self.d_model)
+        # self.positional_encoding = PositionalEncoding(self.n, self.d_model)
+        self.positional_encoding = LearnablePositionalEncoding(self.n, self.d_model)
         encoder_layer = nn.TransformerEncoderLayer(d_model=self.d_model,
                                                    nhead=self.n_heads,
                                                    dim_feedforward=self.d_ff,
@@ -53,7 +65,7 @@ class TraDE(BaseModel):
 
     def forward(self, x):
         x = torch.cat((torch.ones(x.shape[0], 1, device=self.device), x[:, :-1]), dim=1)
-        x = F.relu(self.fc_in(x.unsqueeze(2)))  # (batch_size, n, d_model)
+        x = F.relu(self.fc_in(x.int()))  # (batch_size, n, d_model)
         x = self.positional_encoding(x)
         x = self.encoder(x, mask=self.mask)
         return torch.sigmoid(self.fc_out(x)).squeeze(2)
